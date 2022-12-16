@@ -1,0 +1,56 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.provider :virtualbox do |v|
+    v.memory = 2048
+    v.cpus = 2
+  end
+
+  config.vm.define :control do |control|
+    control.vm.box = "bento/ubuntu-22.04"
+    control.vm.hostname = "control"
+    control.vm.network :private_network, ip: "10.0.0.10"
+    control.vm.network "forwarded_port", guest: 6443, host: 6443# Expose NodePort ports
+    for p in 30000..30100
+      control.vm.network "forwarded_port", guest: p, host: p, protocol: "tcp"
+    end
+    control.vm.provision :shell, privileged: false, inline: $provision_control_node
+  end
+
+  %w{compute1 compute2}.each_with_index do |name, i|
+    config.vm.define name do |compute|
+      compute.vm.box = "bento/ubuntu-22.04"
+      compute.vm.hostname = name
+      compute.vm.network :private_network, ip: "10.0.0.#{i + 11}"
+      compute.vm.provision :shell, privileged: false, inline: $provision_compute_node
+    end
+  end
+
+end
+
+$provision_control_node = <<-CONTROL
+  set -x
+  #!/bin/bash
+  JOIN_FILE=/vagrant/join.key
+  sudo -- sh -c "echo 10.0.0.10 control >> /etc/hosts"
+  sudo -- sh -c "echo 10.0.0.11 compute1 >> /etc/hosts"
+  sudo -- sh -c "echo 10.0.0.12 compute2 >> /etc/hosts"
+  sudo apt update && sudo apt upgrade -y
+  echo "**** Begin installing k3s"
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.25.4+k3s1 K3S_KUBECONFIG_MODE="644" sh -
+  echo "**** End installing k3s"
+  sudo cat /var/lib/rancher/k3s/server/node-token > $JOIN_FILE
+CONTROL
+
+$provision_compute_node = <<-COMPUTE
+  set -x
+  JOIN_FILE=/vagrant/join.key
+  sudo -- sh -c "echo 10.0.0.10 control >> /etc/hosts"
+  sudo -- sh -c "echo 10.0.0.11 compute1 >> /etc/hosts"
+  sudo -- sh -c "echo 10.0.0.12 compute2 >> /etc/hosts"
+  sudo apt update && sudo apt upgrade -y
+  echo "**** Begin installing k3s"
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.25.4+k3s1 K3S_KUBECONFIG_MODE="644" K3S_URL=https://control:6443 K3S_TOKEN=$(cat ${JOIN_FILE}) sh -
+  echo "**** End installing k3s"
+COMPUTE
