@@ -23,9 +23,6 @@ Vagrant.configure("2") do |config|
     end
   end
 
-  system('sed -i "s/10.0.2.15/192.168.1.190/" config') 
-  system('kubectl apply -k ../argocd/bootstrap')
-
 end
 
 $provision_control_node = <<-CONTROL
@@ -42,13 +39,14 @@ $provision_control_node = <<-CONTROL
   sudo usermod -a -G microk8s vagrant
   sudo chown -f -R vagrant ~/.kube
   sg microk8s -c "microk8s status --wait-ready"
-  sg microk8s -c "microk8s enable dashboard dns registry ingress metallb:192.168.1.100-192.168.1.110"
+  sg microk8s -c "microk8s enable dashboard dns registry ingress"
   sg microk8s -c "microk8s add-node --token-ttl=3600 --format=json | jq -c '.urls[1]' | sed 's/\\"//g'" >> $JOIN_FILE
   sudo -- sh -c "echo --advertise-address=192.168.1.190 >> /var/snap/microk8s/current/args/kube-apiserver"
   sudo -- sh -c "echo --bind-address=0.0.0.0 >> /var/snap/microk8s/current/args/kube-apiserver"
   sudo snap restart microk8s
   sg microk8s -c "microk8s status --wait-ready"
   sg microk8s -c "microk8s kubectl patch daemonset -n ingress nginx-ingress-microk8s-controller --type=json -p='[{\"op\": \"add\", \"path\": \"/spec/template/spec/containers/0/args/-\", \"value\": \"--enable-ssl-passthrough\"}]'"
+  sg microk8s -c "microk8s enable metallb:192.168.1.100-192.168.1.150"
   sg microk8s -c "microk8s config > $CONFIG_FILE"
 CONTROL
 
