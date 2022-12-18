@@ -1,0 +1,4 @@
+.vagrant
+config
+join.key
+*.sw*
